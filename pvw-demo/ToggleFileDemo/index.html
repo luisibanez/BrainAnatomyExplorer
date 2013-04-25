@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <link rel="stylesheet" href="/ext/widgets/jquery-ui/jquery-ui-1.10.0.css" type='text/css'>
+        <link rel='stylesheet' href='/lib/css/paraview.ui.pipeline.css'           type='text/css'>
+        <link rel='stylesheet' href='/lib/css/paraview.ui.toolbar.css'            type='text/css'>
+        <link rel='stylesheet' href='/lib/css/paraview.ui.toolbar.vcr.css'        type='text/css'>
+        <link rel='stylesheet' href='/lib/css/paraview.ui.toolbar.viewport.css'   type='text/css'>
+
+        <script src="/ext/js-core/autobahn.min.js"></script>
+        <script src="/ext/js-core/jquery-1.8.2.min.js"></script>
+        <script src="/ext/js-core/gl-matrix-min.js"></script>
+        <script src="/ext/js-core/jquery.hammer.min.js"></script>
+
+        <script src="/ext/widgets/jquery-ui/jquery-ui-1.10.0.min.js"></script>
+
+        <script src="/lib/js/paraview-all.js"></script>
+        <script src="/lib/js/paraview.ui.pipeline.js"></script>
+        <script src="/lib/js/paraview.ui.toolbar.vcr.js"></script>
+        <script src="/lib/js/paraview.ui.toolbar.viewport.js"></script>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            li {
+                list-style: none;
+            }
+
+            .viewport-container {
+                position: absolute;
+                top: 0;
+                lef: 200px;
+                width: 100%;
+                height: 100%;
+            }
+
+            .toggle-list {
+                z-index: 2000;
+                background: #FFFFFF;
+                position: absolute;
+                top: 0;
+                lef: 0;
+                width: 200px;
+                height: 100%;
+                overflow: auto;
+            }
+        </style>
+
+    </head>
+
+    <body class="page">
+        <div class="viewport-container">
+        </div>
+        <div class="toggle-list">
+        </div>
+
+
+        <script type="text/javascript">
+
+            // ==== Global variables ===========================================
+
+            var viewport = null,
+            connection = { sessionURL: "ws://" + location.hostname + ":" + location.port + "/ws"};
+
+
+            // ----------------------------------------------------------------------
+
+            function createBuffer() {
+                var idx = -1, buffer = [];
+                return {
+                    clear: function(){
+                        idx = -1;
+                        buffer = [];
+                    },
+                    append: function(str) {
+                        buffer[++idx] = str;
+                        return this;
+                    },
+                    toString: function() {
+                        return buffer.join('');
+                    }
+                };
+            }
+
+            // ==== Connect to the started ParaView session ====================
+
+            function connect() {
+                paraview.connect(connection, function(connectionData) {
+                    // Create pipeline browser
+                    connection = connectionData;
+                    session = connection.session;
+
+                    // Create list
+                    session.call('pv:listFiles').then(function(list){
+                        var listContainer = $('.toggle-list').empty(),
+                        buffer = createBuffer();
+                        buffer.append("<ul>");
+
+                        // Fill the list...
+                        for(var i in list) {
+                            file = list[i];
+                            start = 1 + file.lastIndexOf('/');
+                            end = file.lastIndexOf('.') - start - 1;
+
+                            buffer.append("<li><input type='checkbox' name='");
+                            buffer.append(file);
+                            buffer.append("' checked>");
+                            buffer.append(file.substr(start, end));
+                            buffer.append("</li>");
+                        }
+                        buffer.append("</ul>");
+                        listContainer[0].innerHTML = buffer.toString();
+
+                        $('input', listContainer).change(function(){
+                            var me = $(this);
+                            connection.session.call('pv:toggle', me.attr('name'), me.is(':checked')).then(function(){
+                                if(viewport != null) {
+                                    viewport.resetCamera();
+                                    viewport.render();
+                                }
+                            });
+
+                        });
+                    });
+
+                    // Create viewport
+                    $(".viewport-container").empty();
+                    viewport = paraview.createViewport({session: connection.session});
+                    viewport.bind(".viewport-container");
+
+                }, function(code,reason){
+                    $(".loading").hide();
+                    console.log(reason);
+                });
+            }
+
+            /**
+             * Method called when the application close
+             */
+            function stop() {
+                if(connection.hasOwnProperty('session') && connection.session) {
+                    viewport.unbind();
+                    connection.session.call('pv:exit');
+                    connection.session = null;
+                }
+            }
+
+
+            connect();
+        </script>
+    </body>
+</html>
